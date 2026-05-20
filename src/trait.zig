@@ -96,6 +96,14 @@ test "satisfyTrait: trait with function" {
     };
 
     try std.testing.expect(satisfyTrait(Trait, A));
+
+    const B = struct {
+        pub fn foo(arg: u32) void {
+            _ = arg;
+        }
+    };
+
+    try std.testing.expect(!satisfyTrait(Trait, B));
 }
 
 test "satisfyTrait: trait with method" {
