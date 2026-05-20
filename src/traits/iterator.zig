@@ -36,12 +36,12 @@ pub fn range(comptime T: type, start: T, end: T, step: T) Range(T) {
 }
 
 /// `MapIterator` is an iterator that applies a function `f` to each item in `iter`.
-pub fn MapIterator(comptime T: type, comptime R: type, comptime f: fn (T.Item) R) type {
+pub fn MapIterator(comptime Iter: type, comptime R: type, comptime f: fn (Iter.Item) R) type {
     return struct {
         const Self = @This();
         pub const Item = R;
 
-        iter: T,
+        iter: Iter,
 
         pub fn next(self: *Self) ?Item {
             if (self.iter.next()) |item| {
@@ -53,18 +53,40 @@ pub fn MapIterator(comptime T: type, comptime R: type, comptime f: fn (T.Item) R
 }
 
 /// `FilterIterator` is an iterator that filters items in `iter` using a predicate `f`.
-pub fn FilterIterator(comptime T: type, comptime f: fn (T.Item) bool) type {
+pub fn FilterIterator(comptime Iter: type, comptime f: fn (Iter.Item) bool) type {
     return struct {
         const Self = @This();
-        pub const Item = T.Item;
+        pub const Item = Iter.Item;
 
-        iter: T,
+        iter: Iter,
 
         pub fn next(self: *Self) ?Item {
             while (self.iter.next()) |item| {
                 if (f(item)) {
                     return item;
                 }
+            }
+            return null;
+        }
+    };
+}
+
+pub fn EnumerateIterator(comptime Iter: type) type {
+    return struct {
+        const Self = @This();
+        pub const Item = struct {
+            usize,
+            Iter.Item,
+        };
+
+        count: usize = 0,
+        iter: Iter,
+
+        pub fn next(self: *Self) ?Item {
+            if (self.iter.next()) |item| {
+                const count = self.count;
+                self.count += 1;
+                return .{ count, item };
             }
             return null;
         }
@@ -115,6 +137,23 @@ pub fn Iterator(comptime Iter: type) R: {
             };
             return .from(filter_iter);
         }
+
+        /// Folds the items in the iterator using `f` and an initial value `init`.
+        pub fn fold(self: *Self, comptime R: type, init: R, comptime f: fn (R, Item) R) R {
+            var result: R = init;
+            while (self.next()) |item| {
+                result = f(result, item);
+            }
+            return result;
+        }
+
+        pub fn enumerate(self: *Self) Iterator(EnumerateIterator(Self)) {
+            const Enumerate = EnumerateIterator(Self);
+            const enumerate_iter = Enumerate{
+                .iter = self.*,
+            };
+            return .from(enumerate_iter);
+        }
     };
 }
 
@@ -159,4 +198,33 @@ test "filter" {
     try std.testing.expectEqual(2, filter_iter.next() orelse unreachable);
     try std.testing.expectEqual(4, filter_iter.next() orelse unreachable);
     try std.testing.expectEqual(null, filter_iter.next());
+}
+
+test "fold" {
+    const range_iter = range(usize, 0, 5, 1);
+    var iter: Iterator(Range(usize)) = .from(range_iter);
+    const result = iter.fold(usize, 0, struct {
+        pub fn lambda(x: usize, y: usize) usize {
+            return x + y;
+        }
+    }.lambda);
+    try std.testing.expectEqual(10, result);
+}
+
+test "enumerate" {
+    const range_iter = range(usize, 5, 10, 2);
+    var iter: Iterator(Range(usize)) = .from(range_iter);
+    var enumerate_iter = iter.enumerate();
+
+    const index1, const value1 = enumerate_iter.next() orelse unreachable;
+    try std.testing.expectEqual(0, index1);
+    try std.testing.expectEqual(5, value1);
+    const index2, const value2 = enumerate_iter.next() orelse unreachable;
+    try std.testing.expectEqual(1, index2);
+    try std.testing.expectEqual(7, value2);
+    const index3, const value3 = enumerate_iter.next() orelse unreachable;
+    try std.testing.expectEqual(2, index3);
+    try std.testing.expectEqual(9, value3);
+    const index4 = enumerate_iter.next();
+    try std.testing.expectEqual(null, index4);    
 }
