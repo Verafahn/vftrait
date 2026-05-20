@@ -41,7 +41,7 @@ pub fn MapIterator(comptime T: type, comptime R: type, comptime f: fn (T.Item) R
         const Self = @This();
         pub const Item = R;
 
-        iter: *T,
+        iter: T,
 
         pub fn next(self: *Self) ?Item {
             if (self.iter.next()) |item| {
@@ -58,7 +58,7 @@ pub fn FilterIterator(comptime T: type, comptime f: fn (T.Item) bool) type {
         const Self = @This();
         pub const Item = T.Item;
 
-        iter: *T,
+        iter: T,
 
         pub fn next(self: *Self) ?Item {
             while (self.iter.next()) |item| {
@@ -72,22 +72,22 @@ pub fn FilterIterator(comptime T: type, comptime f: fn (T.Item) bool) type {
 }
 
 /// Returns the iterator type for a given iterable type `T`.
-pub fn Iterator(comptime T: type) R: {
-    trait.assertSatisfyTrait(Iterable, T);
+pub fn Iterator(comptime Iter: type) R: {
+    trait.assertSatisfyTrait(Iterable, Iter);
     break :R type;
 } {
     return struct {
         const Self = @This();
-        const Item = T.Item;
+        const Item = Iter.Item;
 
         fn next(self: *Self) ?Item {
             return self.iter.next();
         }
 
-        iter: T,
+        iter: Iter,
 
         /// Creates an iterator from an iterable `iter`.
-        pub fn from(iter: T) Self {
+        pub fn from(iter: Iter) Self {
             return .{ .iter = iter };
         }
 
@@ -102,7 +102,7 @@ pub fn Iterator(comptime T: type) R: {
         pub fn map(self: *Self, comptime R: type, comptime f: fn (Item) R) Iterator(MapIterator(Self, R, f)) {
             const Map = MapIterator(Self, R, f);
             const map_iter = Map{
-                .iter = self,
+                .iter = self.*,
             };
             return .from(map_iter);
         }
@@ -111,7 +111,7 @@ pub fn Iterator(comptime T: type) R: {
         pub fn filter(self: *Self, comptime f: fn (Item) bool) Iterator(FilterIterator(Self, f)) {
             const Filter = FilterIterator(Self, f);
             const filter_iter = Filter{
-                .iter = self,
+                .iter = self.*,
             };
             return .from(filter_iter);
         }
