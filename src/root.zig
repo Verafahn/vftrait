@@ -13,14 +13,14 @@ const std = @import("std");
 pub const satisfyTrait: fn (comptime Trait: type, comptime T: type) bool = trait.satisfyTrait;
 
 /// Returns true if `Trait` is not satisfied by `T`.
-/// 
+///
 /// This is the negation of [`satisfyTrait`].
 pub fn notSatisfyTrait(comptime Trait: type, comptime T: type) bool {
     return !satisfyTrait(Trait, T);
 }
 
 /// Asserts that `T` satisfies `Trait`.
-/// 
+///
 /// This is useful for compile-time checks that a type satisfies a trait.
 pub fn assertSatisfyTrait(comptime Trait: type, comptime T: type) void {
     if (comptime notSatisfyTrait(Trait, T)) {
@@ -29,7 +29,7 @@ pub fn assertSatisfyTrait(comptime Trait: type, comptime T: type) void {
 }
 
 /// Requires that `T` satisfies `Trait` and returns `T`.
-/// 
+///
 /// This is useful for compile-time checks that a type satisfies a trait.
 pub fn requireSatisfyTrait(comptime Trait: type, comptime T: type) type {
     assertSatisfyTrait(Trait, T);
@@ -37,7 +37,7 @@ pub fn requireSatisfyTrait(comptime Trait: type, comptime T: type) type {
 }
 
 /// Requires that all traits in `Traits` are satisfied by `T` and returns `T`.
-/// 
+///
 /// This is useful for compile-time checks that a type satisfies a trait.
 pub fn satisfyAllTraits(comptime Traits: []type, comptime T: type) bool {
     for (Traits) |Trait| {
@@ -47,8 +47,18 @@ pub fn satisfyAllTraits(comptime Traits: []type, comptime T: type) bool {
 }
 
 /// Returns true if none of the traits in `Traits` are satisfied by `T`.
-/// 
+///
 /// This is the negation of [`satisfyAllTraits`].
 pub fn notSatisfyTraits(comptime Traits: []type, comptime T: type) bool {
     return !satisfyAllTraits(Traits, T);
+}
+
+pub const traits = @import("traits/root.zig");
+
+test "traits" {
+    std.testing.refAllDecls(traits);
+}
+
+test "trait" {
+    std.testing.refAllDecls(trait);
 }
