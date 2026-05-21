@@ -62,7 +62,7 @@ comptime {
 }
 ```
 
-A good practice is to embed the trait in function signatures, for example by placing it in the return type expression:
+For example, a specific usage example:
 
 ```zig
 const vftrait = @import("vftrait");
