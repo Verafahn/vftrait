@@ -3,8 +3,10 @@ const std = @import("std");
 
 /// Trait for iterators.
 pub const Iterable = struct {
+    /// The type of items yielded by the iterator.
     pub const Item = type;
 
+    /// Returns the next item from the iterator, or `null` if there are no more items.
     pub fn next(self: *@This()) ?Item {
         _ = self;
         @compileError("Not an available implementation.");
@@ -71,6 +73,7 @@ pub fn FilterIterator(comptime Iter: type, comptime f: fn (Iter.Item) bool) type
     };
 }
 
+/// `EnumerateIterator` is an iterator that enumerates items in `iter` with their index.
 pub fn EnumerateIterator(comptime Iter: type) type {
     return struct {
         const Self = @This();
@@ -94,10 +97,13 @@ pub fn EnumerateIterator(comptime Iter: type) type {
 }
 
 /// Returns the iterator type for a given iterable type `T`.
-pub fn Iterator(comptime Iter: type) R: {
+/// 
+/// # Requirements
+/// 
+/// - `T` must satisfy the `Iterable` trait.
+pub fn Iterator(comptime Iter: type) type {
     trait.assertSatisfyTrait(Iterable, Iter);
-    break :R type;
-} {
+
     return struct {
         const Self = @This();
         const Item = Iter.Item;
@@ -226,5 +232,5 @@ test "enumerate" {
     try std.testing.expectEqual(2, index3);
     try std.testing.expectEqual(9, value3);
     const index4 = enumerate_iter.next();
-    try std.testing.expectEqual(null, index4);    
+    try std.testing.expectEqual(null, index4);
 }
