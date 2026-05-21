@@ -94,7 +94,18 @@ pub fn matchAssociatedFunctions(comptime Trait: type, comptime T: type) bool {
             \\Type '{any}' not satisfied by trait '{any}':
             \\  - Function '{s}' in type '{any}' does not match function '{s}' in trait '{any}'.
             \\  - Their forms are inconsistent (different constructions).
-        , .{ T, Trait, func_name, T, func_name, Trait });
+            \\  - Trait: '{any}'
+            \\  - Type: '{any}'
+        , .{
+            T,
+            Trait,
+            func_name,
+            T,
+            func_name,
+            Trait,
+            @TypeOf(@field(Trait, func_name)),
+            @TypeOf(@field(T, func_name)),
+        });
     }
     return true;
 }
@@ -158,7 +169,18 @@ pub fn matchMethods(comptime Trait: type, comptime T: type) bool {
             \\Type '{any}' not satisfied by trait '{any}':
             \\  - Method '{s}' in type '{any}' does not match method '{s}' in trait '{any}'.
             \\  - Their forms are inconsistent (different constructions).
-        , .{ T, Trait, func_name, T, func_name, Trait });
+            \\  - Trait: '{any}'
+            \\  - Type: '{any}'
+        , .{
+            T,
+            Trait,
+            func_name,
+            T,
+            func_name,
+            Trait,
+            @TypeOf(@field(Trait, func_name)),
+            @TypeOf(@field(T, func_name)),
+        });
     }
     return true;
 }
