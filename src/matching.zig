@@ -51,7 +51,7 @@ pub fn matchAssociatedTypes(comptime Trait: type, comptime T: type) bool {
             return reportError(
                 \\Type '{any}' not satisfied by trait '{any}':
                 \\  - The categories of '{s}' in '{any}' and '{s}' in '{any}' are inconsistent.
-                \\  - Expected '{any}', but found '{any}'.
+                \\  - Expected '{s}', but found '{s}'.
             ,
                 .{ T, Trait, name, T, name, Trait, @tagName(trait_member), @tagName(target_member) },
             );
@@ -94,7 +94,7 @@ pub fn matchAssociatedFunctions(comptime Trait: type, comptime T: type) bool {
             \\Type '{any}' not satisfied by trait '{any}':
             \\  - Function '{s}' in type '{any}' does not match function '{s}' in trait '{any}'.
             \\  - Their forms are inconsistent (different constructions).
-        , .{ T, Trait, func_name, T, Trait, func_name, Trait });
+        , .{ T, Trait, func_name, T, func_name, Trait });
     }
     return true;
 }
@@ -158,7 +158,7 @@ pub fn matchMethods(comptime Trait: type, comptime T: type) bool {
             \\Type '{any}' not satisfied by trait '{any}':
             \\  - Method '{s}' in type '{any}' does not match method '{s}' in trait '{any}'.
             \\  - Their forms are inconsistent (different constructions).
-        , .{ T, Trait, func_name, T, Trait, func_name, Trait });
+        , .{ T, Trait, func_name, T, func_name, Trait });
     }
     return true;
 }
