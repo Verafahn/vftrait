@@ -1,6 +1,6 @@
 .{
     .name = .vftrait,
-    .version = "0.1.0",
+    .version = "0.1.1",
     .fingerprint = 0xab5f3cec1d300fbd,
     .minimum_zig_version = "0.16.0",
     .paths = .{
