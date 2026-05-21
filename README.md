@@ -77,26 +77,25 @@ pub const Point = struct {
     y: f32,
 
     pub fn draw(self: *const @This()) void {
-        std.debug.print("Point(x={}, y={})", .{self.x, self.y});
+        std.debug.print("Point(x={}, y={})", .{ self.x, self.y });
     }
 };
 
-pub fn draw(shape: anytype) R: {
-    if(!satisfyTrait(Drawable, @TypeOf(shape)))
-        @compileError("shape must implement Drawable");
-    break :R void;
-} {
+pub fn draw(shape: anytype) void {
+    vftrait.assertSatisfyTrait(Drawable, @TypeOf(shape));
     shape.draw();
     return;
 }
 
-{
+pub fn main(init: std.process.Init) !void {
+    _ = init;
+
     const circle = Circle{ .radius = 5.0 };
     draw(circle);
     const point = Point{ .x = 1.0, .y = 2.0 };
     draw(point);
 
-    draw(10); // Error: @TypeOf(10) does not satisfy Drawable
+    // draw(10); // Error: @TypeOf(10) does not satisfy Drawable
 }
 ```
 
@@ -104,12 +103,12 @@ pub fn draw(shape: anytype) R: {
 
 The trait struct can contain four kinds of declarations:
 
-| Category               | Zig Declaration                              | Example                                      |
-| ---------------------- | -------------------------------------------- | -------------------------------------------- |
-| **Associated constant**| `pub const name: T = ...;`                  | `pub const max_size: usize = 1024;`          |
-| **Associated type**    | `pub const Name = some_type;`               | `pub const Item = struct {};`                |
-| **Associated function**| `pub fn name(...) ... { }`                  | `pub fn fromInt(n: i32) Self { }`            |
-| **Method**             | `pub fn name(self: *Self, ...) ... { }`     | `pub fn clone(self: *const Self) Self { }`   |
+| Category                | Zig Declaration                         | Example                                    |
+| ----------------------- | --------------------------------------- | ------------------------------------------ |
+| **Associated constant** | `pub const name: T = ...;`              | `pub const max_size: usize = 1024;`        |
+| **Associated type**     | `pub const Name = some_type;`           | `pub const Item = struct {};`              |
+| **Associated function** | `pub fn name(...) ... { }`              | `pub fn fromInt(n: i32) Self { }`          |
+| **Method**              | `pub fn name(self: *Self, ...) ... { }` | `pub fn clone(self: *const Self) Self { }` |
 
 ## Matching Rules
 
@@ -123,8 +122,10 @@ The trait struct can contain four kinds of declarations:
 When an associated type in the trait is set to the built‑in `type`, that position accepts any type:
 
 ```zig
+const vftrait = @import("vftrait");
+
 const Trait = struct {
-    pub const Value = type;          // Accepts any type
+    pub const Value = type; // Accepts any type
     pub fn get(self: *const @This()) Value {
         _ = self;
     }
@@ -132,34 +133,27 @@ const Trait = struct {
 
 const IntHolder = struct {
     pub const Value = i32;
-    pub fn get(self: *const @This()) i32 { return 42; }
+    pub fn get(self: *const @This()) i32 {
+        _ = self;
+        return 42;
+    }
 };
 
 const StrHolder = struct {
     pub const Value = []const u8;
-    pub fn get(self: *const @This()) []const u8 { return "hi"; }
+    pub fn get(self: *const @This()) []const u8 {
+        _ = self;
+        return "hi";
+    }
 };
 
 comptime {
-    @compileLog(vftrait.satisfyTrait(Trait, IntHolder));  // true
-    @compileLog(vftrait.satisfyTrait(Trait, StrHolder));  // true
+    @compileLog(vftrait.satisfyTrait(Trait, IntHolder)); // true
+    @compileLog(vftrait.satisfyTrait(Trait, StrHolder)); // true
 }
 ```
 
 This also works for `u32`, `struct`, `union`, `error`, `enum`, pointers, optionals, and any other type.
-
-## API Reference
-
-```zig
-const vftrait = @import("vftrait");
-
-/// Returns true if type `T` satisfies all declarations in `Trait`.
-///
-/// `Trait` must be a non‑tuple struct.
-///
-/// Compile error if `Trait` is not a struct or is a tuple struct.
-pub fn satisfyTrait(comptime Trait: type, comptime T: type) bool
-```
 
 ## Requirements
 
