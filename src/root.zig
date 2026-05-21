@@ -18,7 +18,7 @@ const std = @import("std");
 pub const satisfyTrait: fn (comptime Trait: type, comptime T: type) bool = trait.satisfyTrait;
 
 /// Returns true if `Trait` is not satisfied by `T`.
-/// 
+///
 /// This is the negation of [`satisfyTrait`].
 /// 
 /// # Requirements
@@ -30,7 +30,7 @@ pub fn notSatisfyTrait(comptime Trait: type, comptime T: type) bool {
 }
 
 /// Asserts that `T` satisfies `Trait`.
-/// 
+///
 /// This is useful for compile-time checks that a type satisfies a trait.
 /// 
 /// # Requirements
@@ -44,7 +44,7 @@ pub fn assertSatisfyTrait(comptime Trait: type, comptime T: type) void {
 }
 
 /// Requires that `T` satisfies `Trait` and returns `T`.
-/// 
+///
 /// This is useful for compile-time checks that a type satisfies a trait.
 /// 
 /// # Requirements
@@ -57,7 +57,7 @@ pub fn requireSatisfyTrait(comptime Trait: type, comptime T: type) type {
 }
 
 /// Requires that all traits in `Traits` are satisfied by `T` and returns `T`.
-/// 
+///
 /// This is useful for compile-time checks that a type satisfies a trait.
 /// 
 /// # Requirements
@@ -72,7 +72,7 @@ pub fn satisfyAllTraits(comptime Traits: []type, comptime T: type) bool {
 }
 
 /// Returns true if none of the traits in `Traits` are satisfied by `T`.
-/// 
+///
 /// This is the negation of [`satisfyAllTraits`].
 /// 
 /// # Requirements
@@ -81,4 +81,14 @@ pub fn satisfyAllTraits(comptime Traits: []type, comptime T: type) bool {
 /// - `Trait` must not be a tuple
 pub fn notSatisfyTraits(comptime Traits: []type, comptime T: type) bool {
     return !satisfyAllTraits(Traits, T);
+}
+
+pub const traits = @import("traits/root.zig");
+
+test "traits" {
+    std.testing.refAllDecls(traits);
+}
+
+test "trait" {
+    std.testing.refAllDecls(trait);
 }
