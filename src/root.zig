@@ -84,18 +84,12 @@ pub fn notSatisfyTraits(comptime Traits: []type, comptime T: type) bool {
     return !satisfyAllTraits(Traits, T);
 }
 
-pub const traits = @import("traits/root.zig");
-
 pub fn reportError(comptime fmt: []const u8, args: anytype) bool {
     if (builtin.is_test) {
         return false;
     }
     const msg = comptime std.fmt.comptimePrint(fmt, args);
     @compileError(msg);
-}
-
-test "traits" {
-    std.testing.refAllDecls(traits);
 }
 
 test "trait" {
