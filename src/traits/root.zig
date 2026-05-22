@@ -1,4 +1,5 @@
 const std = @import("std");
+const vftrait = @import("vftrait");
 
 /// A trait that provides a `format` method for formatting values into a writer.
 ///
@@ -15,9 +16,26 @@ pub const Formatable = struct {
     }
 };
 
-test "Formatable" {
-    const vftrait = @import("vftrait");
+/// A convenience function for creating a `Format` type from a `Formatable` trait implementation.
+///
+/// Its purpose is to create a wrapper for the type for IDE recognition.
+pub fn Format(comptime F: type) type {
+    vftrait.assertSatisfyTrait(Formatable, F);
+    return struct {
+        const Self = @This();
+        impl: F,
 
+        pub fn from(impl: F) Self {
+            return .{ .impl = impl };
+        }
+
+        pub fn format(self: *Self, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+            try self.impl.format(writer);
+        }
+    };
+}
+
+test "Formatable" {
     const T = struct {
         a: i32,
 
