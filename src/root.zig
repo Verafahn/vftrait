@@ -2,6 +2,11 @@ const trait = @import("trait.zig");
 const std = @import("std");
 const builtin = @import("builtin");
 
+/// This section provides some predefined traits.
+/// 
+/// It is worth noting that the implementation of these traits may not necessarily be optimal.
+pub const traits = @import("traits/root.zig");
+
 /// Returns true if `Trait` is satisfied by `T`.
 ///
 /// A trait is a struct whose declarations specify the contract:
@@ -94,4 +99,8 @@ pub fn reportError(comptime fmt: []const u8, args: anytype) bool {
 
 test "trait" {
     std.testing.refAllDecls(trait);
+}
+
+test "traits" {
+    std.testing.refAllDecls(traits);
 }
