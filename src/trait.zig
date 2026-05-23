@@ -12,9 +12,9 @@ pub const TraitAttribute = @import("attribute.zig").TraitAttribute;
 /// - methods (functions taking self as the first parameter)
 ///
 /// `T` satisfies the trait if it has matching declarations for all of the above.
-/// 
+///
 /// # Requirements
-/// 
+///
 /// - `Trait` must be a struct
 /// - `Trait` must not be a tuple
 pub fn satisfyTrait(comptime Trait: type, comptime T: type) bool {
@@ -23,7 +23,7 @@ pub fn satisfyTrait(comptime Trait: type, comptime T: type) bool {
     if (@typeInfo(Trait).@"struct".is_tuple)
         @compileError("Trait must be not a tuple");
 
-    return matching.matchAssociatedConstants(Trait, T) and
+    return comptime matching.matchAssociatedConstants(Trait, T) and
         matching.matchAssociatedTypes(Trait, T) and
         matching.matchMethods(Trait, T) and
         matching.matchAssociatedFunctions(Trait, T);

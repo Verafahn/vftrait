@@ -14,7 +14,10 @@ pub fn isomorphic(comptime Trait: type, comptime T: type, comptime Traits: type,
     const target_info = @typeInfo(Ts);
 
     switch (trait_info) {
-        .type => return true,
+        .type => {
+            if(Ts == anyopaque or Traits == type) return true;
+            return std.meta.eql(trait_info, target_info);
+        },
 
         // Simple types: compare the type info directly
         .void,

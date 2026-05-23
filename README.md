@@ -1,7 +1,17 @@
 # vftrait
 
-A compile-time trait checking library for Zig, inspired by Rust's trait system.  
-It provides the `satisfyTrait` function to verify at compile time whether a type satisfies the contract defined by a trait.
+A library for duck type checking during compilation. It provides the `satisfyTrait` function to verify at compile time whether a type satisfies the contract defined by a trait. 
+
+Similar concepts in other languages:
+| **Language** | **Concept** | **Keyword** |
+|---|---|---|
+| Rust | Trait | `trait` / `impl` |
+| C++ | Concept | `concept` / `requires` |
+| Haskell | Typeclass | `class` / `instance` |
+| Swift | Protocol | `protocol` |
+| Go | Interface (structural) | `interface` |
+| Java | Interface (nominal) | `interface` / `implements` |
+
 
 ## Installation
 
@@ -52,7 +62,7 @@ comptime {
 }
 ```
 
-A good practice is to embed the trait in function signatures, for example by placing it in the return type expression:
+For example, a specific usage example:
 
 ```zig
 const vftrait = @import("vftrait");
