@@ -60,10 +60,10 @@ pub fn Allocator(comptime A: type) type {
         pub const Error = std.mem.Allocator.Error;
         // Wrapper around the allocator implementation.
 
-        impl: Impl,
+        impl: *Impl,
 
-        pub fn from(static: Impl) Self {
-            return .{ .impl = static };
+        pub fn from(impl: *Impl) Self {
+            return .{ .impl = impl };
         }
 
         inline fn rawAlloc(self: *Self, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
@@ -71,7 +71,7 @@ pub fn Allocator(comptime A: type) type {
                 return @call(
                     .always_inline,
                     A.alloc,
-                    .{ &self.impl, len, alignment, ret_addr },
+                    .{ self.impl, len, alignment, ret_addr },
                 );
             } else {
                 return self.impl.vtable.alloc(
@@ -88,7 +88,7 @@ pub fn Allocator(comptime A: type) type {
                 return @call(
                     .always_inline,
                     A.resize,
-                    .{ &self.impl, memory, alignment, new_len, ret_addr },
+                    .{ self.impl, memory, alignment, new_len, ret_addr },
                 );
             } else {
                 return self.impl.vtable.resize(
@@ -106,7 +106,7 @@ pub fn Allocator(comptime A: type) type {
                 return @call(
                     .always_inline,
                     A.remap,
-                    .{ &self.impl, memory, alignment, new_len, ret_addr },
+                    .{ self.impl, memory, alignment, new_len, ret_addr },
                 );
             } else {
                 return self.impl.vtable.remap(
@@ -124,7 +124,7 @@ pub fn Allocator(comptime A: type) type {
                 @call(
                     .always_inline,
                     A.free,
-                    .{ &self.impl, memory, alignment, ret_addr },
+                    .{ self.impl, memory, alignment, ret_addr },
                 );
             } else {
                 self.impl.vtable.free(
@@ -460,7 +460,8 @@ test "Allocator" {
     try std.testing.expect(comptime vftrait.satisfyTrait(AllocatorTrait, std.heap.FixedBufferAllocator));
 
     var buffer: [10]u8 = undefined;
-    var allocator: Allocator(std.heap.FixedBufferAllocator) = .from(.init(&buffer));
+    var gpa: std.heap.FixedBufferAllocator = .init(&buffer);
+    var allocator: Allocator(@TypeOf(gpa)) = .from(&gpa);
 
     const p = try allocator.create(u32);
     p.* = 42;
