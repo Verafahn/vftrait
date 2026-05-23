@@ -136,7 +136,8 @@ pub fn matchMethods(comptime Trait: type, comptime T: type) bool {
                         @typeInfo(TraitSelf).pointer
                     else
                         break :blk false;
-                    copy_info.child = trait_self_info.child;
+                    if (copy_info.child == anyopaque)
+                        copy_info.child = trait_self_info.child;
                     if (!std.meta.eql(copy_info, trait_self_info))
                         break :blk false;
                 },
