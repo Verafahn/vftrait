@@ -1,5 +1,10 @@
 const std = @import("std");
 
+pub const Dispatch = enum {
+    static,
+    dynamic,
+};
+
 const format = @import("format.zig");
 pub const FormatTrait = format.FormatTrait;
 pub const Format = format.Format;

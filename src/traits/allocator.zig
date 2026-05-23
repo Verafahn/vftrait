@@ -4,9 +4,10 @@ const Alignment = std.mem.Alignment;
 const math = std.math;
 const assert = std.debug.assert;
 const mem = std.mem;
+const Dispatch = @import("root.zig").Dispatch;
 
 /// A trait for allocators that provides a standard interface for memory allocation.
-/// 
+///
 /// It is equivalent to the standard library allocator, the only difference being that it is a static allocator.
 pub const AllocatorTrait = struct {
     const Self = @This();
@@ -47,50 +48,90 @@ pub const AllocatorTrait = struct {
 };
 
 /// A wrapper around an allocator implementation that provides a standard interface for memory allocation.
-/// 
+///
 /// It is equivalent to the standard library allocator, the only difference being that it is a static allocator.
-pub fn Allocator(comptime A: type) type {
+pub fn Allocator(comptime A: type, comptime dispath: Dispatch) type {
     vftrait.assertSatisfyTrait(AllocatorTrait, A);
     return struct {
         const Self = @This();
+        pub const Impl = if (dispath == .static) A else std.mem.Allocator;
         pub const Error = std.mem.Allocator.Error;
         // Wrapper around the allocator implementation.
-        impl: A,
 
-        pub fn from(impl: A) Self {
-            return .{ .impl = impl };
+        impl: Impl,
+
+        pub fn from(static: Impl) Self {
+            return .{ .impl = static };
         }
 
         inline fn rawAlloc(self: *Self, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
-            return @call(
-                .always_inline,
-                A.alloc,
-                .{ &self.impl, len, alignment, ret_addr },
-            );
+            if (comptime dispath == .static) {
+                return @call(
+                    .always_inline,
+                    A.alloc,
+                    .{ &self.impl, len, alignment, ret_addr },
+                );
+            } else {
+                return self.impl.vtable.alloc(
+                    self.impl.ptr,
+                    len,
+                    alignment,
+                    ret_addr,
+                );
+            }
         }
 
         inline fn rawResize(self: *Self, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) bool {
-            return @call(
-                .always_inline,
-                A.resize,
-                .{ &self.impl, memory, alignment, new_len, ret_addr },
-            );
+            if (comptime dispath == .static) {
+                return @call(
+                    .always_inline,
+                    A.resize,
+                    .{ &self.impl, memory, alignment, new_len, ret_addr },
+                );
+            } else {
+                return self.impl.vtable.resize(
+                    self.impl.ptr,
+                    memory,
+                    alignment,
+                    new_len,
+                    ret_addr,
+                );
+            }
         }
 
         inline fn rawRemap(self: *Self, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
-            return @call(
-                .always_inline,
-                A.remap,
-                .{ &self.impl, memory, alignment, new_len, ret_addr },
-            );
+            if (comptime dispath == .static) {
+                return @call(
+                    .always_inline,
+                    A.remap,
+                    .{ &self.impl, memory, alignment, new_len, ret_addr },
+                );
+            } else {
+                return self.impl.vtable.remap(
+                    self.impl.ptr,
+                    memory,
+                    alignment,
+                    new_len,
+                    ret_addr,
+                );
+            }
         }
 
         inline fn rawFree(self: *Self, memory: []u8, alignment: Alignment, ret_addr: usize) void {
-            return @call(
-                .always_inline,
-                A.free,
-                .{ &self.impl, memory, alignment, ret_addr },
-            );
+            if (comptime dispath == .static) {
+                @call(
+                    .always_inline,
+                    A.free,
+                    .{ &self.impl, memory, alignment, ret_addr },
+                );
+            } else {
+                self.impl.vtable.free(
+                    self.impl.ptr,
+                    memory,
+                    alignment,
+                    ret_addr,
+                );
+            }
         }
 
         // Allocator interface methods.
@@ -417,7 +458,7 @@ test "Allocator" {
     try std.testing.expect(comptime vftrait.satisfyTrait(AllocatorTrait, std.heap.FixedBufferAllocator));
 
     var buffer: [10]u8 = undefined;
-    var allocator: Allocator(std.heap.FixedBufferAllocator) = .from(.init(&buffer));
+    var allocator: Allocator(std.heap.FixedBufferAllocator, .static) = .from(.init(&buffer));
 
     const p = try allocator.create(u32);
     p.* = 42;
