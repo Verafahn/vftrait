@@ -66,7 +66,7 @@ pub fn Allocator(comptime A: type) type {
             return .{ .impl = impl };
         }
 
-        inline fn rawAlloc(self: *Self, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
+        inline fn rawAlloc(self: Self, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
             if (comptime dispath == .static) {
                 return @call(
                     .always_inline,
@@ -83,7 +83,7 @@ pub fn Allocator(comptime A: type) type {
             }
         }
 
-        inline fn rawResize(self: *Self, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) bool {
+        inline fn rawResize(self: Self, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) bool {
             if (comptime dispath == .static) {
                 return @call(
                     .always_inline,
@@ -101,7 +101,7 @@ pub fn Allocator(comptime A: type) type {
             }
         }
 
-        inline fn rawRemap(self: *Self, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+        inline fn rawRemap(self: Self, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
             if (comptime dispath == .static) {
                 return @call(
                     .always_inline,
@@ -119,7 +119,7 @@ pub fn Allocator(comptime A: type) type {
             }
         }
 
-        inline fn rawFree(self: *Self, memory: []u8, alignment: Alignment, ret_addr: usize) void {
+        inline fn rawFree(self: Self, memory: []u8, alignment: Alignment, ret_addr: usize) void {
             if (comptime dispath == .static) {
                 @call(
                     .always_inline,
@@ -140,7 +140,7 @@ pub fn Allocator(comptime A: type) type {
 
         /// Returns a pointer to undefined memory.
         /// Call `destroy` with the result to free the memory.
-        pub fn create(self: *Self, comptime T: type) Error!*T {
+        pub fn create(self: Self, comptime T: type) Error!*T {
             if (@sizeOf(T) == 0) {
                 const ptr = comptime std.mem.alignBackward(usize, math.maxInt(usize), @alignOf(T));
                 return @ptrFromInt(ptr);
@@ -151,7 +151,7 @@ pub fn Allocator(comptime A: type) type {
 
         /// `ptr` should be the return value of `create`, or otherwise
         /// have the same address and alignment property.
-        pub fn destroy(self: *Self, ptr: anytype) void {
+        pub fn destroy(self: Self, ptr: anytype) void {
             const info = @typeInfo(@TypeOf(ptr)).pointer;
             if (info.size != .one) @compileError("ptr must be a single item pointer");
             const T = info.child;
@@ -172,12 +172,12 @@ pub fn Allocator(comptime A: type) type {
         /// call `free` when done.
         ///
         /// For allocating a single item, see `create`.
-        pub fn alloc(self: *Self, comptime T: type, n: usize) Error![]T {
+        pub fn alloc(self: Self, comptime T: type, n: usize) Error![]T {
             return self.allocAdvancedWithRetAddr(T, null, n, @returnAddress());
         }
 
         pub fn allocWithOptions(
-            self: *Self,
+            self: Self,
             comptime Elem: type,
             n: usize,
             /// null means naturally aligned
@@ -188,7 +188,7 @@ pub fn Allocator(comptime A: type) type {
         }
 
         pub fn allocWithOptionsRetAddr(
-            self: *Self,
+            self: Self,
             comptime Elem: type,
             n: usize,
             /// null means naturally aligned
@@ -222,7 +222,7 @@ pub fn Allocator(comptime A: type) type {
         ///
         /// For allocating a single item, see `create`.
         pub fn allocSentinel(
-            self: *Self,
+            self: Self,
             comptime Elem: type,
             n: usize,
             comptime sentinel: Elem,
@@ -231,7 +231,7 @@ pub fn Allocator(comptime A: type) type {
         }
 
         pub fn alignedAlloc(
-            self: *Self,
+            self: Self,
             comptime T: type,
             /// null means naturally aligned
             comptime alignment: ?Alignment,
@@ -241,7 +241,7 @@ pub fn Allocator(comptime A: type) type {
         }
 
         pub inline fn allocAdvancedWithRetAddr(
-            self: *Self,
+            self: Self,
             comptime T: type,
             /// null means naturally aligned
             comptime alignment: ?Alignment,
@@ -254,7 +254,7 @@ pub fn Allocator(comptime A: type) type {
         }
 
         fn allocWithSizeAndAlignment(
-            self: *Self,
+            self: Self,
             comptime size: usize,
             comptime alignment: Alignment,
             n: usize,
@@ -265,7 +265,7 @@ pub fn Allocator(comptime A: type) type {
         }
 
         fn allocBytesWithAlignment(
-            self: *Self,
+            self: Self,
             comptime alignment: Alignment,
             byte_count: usize,
             return_address: usize,
@@ -289,7 +289,7 @@ pub fn Allocator(comptime A: type) type {
         /// unless `new_len` is also 0, in which case `true` is returned.
         ///
         /// `new_len` may be zero, in which case the allocation is freed.
-        pub fn resize(self: *Self, allocation: anytype, new_len: usize) bool {
+        pub fn resize(self: Self, allocation: anytype, new_len: usize) bool {
             const slice_info = @typeInfo(@TypeOf(allocation)).pointer;
             comptime assert(slice_info.size == .slice);
             const T = slice_info.child;
@@ -329,7 +329,7 @@ pub fn Allocator(comptime A: type) type {
         /// `new_len` may be zero, in which case the allocation is freed.
         ///
         /// If the allocation's elements' type is zero bytes sized, `allocation.len` is set to `new_len`.
-        pub fn remap(self: *Self, allocation: anytype, new_len: usize) ?@TypeOf(allocation) {
+        pub fn remap(self: Self, allocation: anytype, new_len: usize) ?@TypeOf(allocation) {
             const slice_info = @typeInfo(@TypeOf(allocation)).pointer;
             comptime assert(slice_info.size == .slice);
             const T = slice_info.child;
@@ -374,12 +374,12 @@ pub fn Allocator(comptime A: type) type {
         ///   do the realloc more efficiently than the caller
         /// * `resize` which returns `false` when the `Allocator` implementation cannot
         ///   change the size without relocating the allocation.
-        pub fn realloc(self: *Self, old_mem: anytype, new_n: usize) Error!@TypeOf(old_mem) {
+        pub fn realloc(self: Self, old_mem: anytype, new_n: usize) Error!@TypeOf(old_mem) {
             return self.reallocAdvanced(old_mem, new_n, @returnAddress());
         }
 
         pub fn reallocAdvanced(
-            self: *Self,
+            self: Self,
             old_mem: anytype,
             new_n: usize,
             return_address: usize,
@@ -418,7 +418,7 @@ pub fn Allocator(comptime A: type) type {
         /// Free an array allocated with `alloc`.
         /// If memory has length 0, free is a no-op.
         /// To free a single item, see `destroy`.
-        pub fn free(self: *Self, memory: anytype) void {
+        pub fn free(self: Self, memory: anytype) void {
             const slice_info = @typeInfo(@TypeOf(memory)).pointer;
             comptime assert(slice_info.size == .slice);
             const bytes: []u8 = @ptrCast(@constCast(mem.absorbSentinel(memory)));
@@ -461,7 +461,7 @@ test "Allocator" {
 
     var buffer: [10]u8 = undefined;
     var gpa: std.heap.FixedBufferAllocator = .init(&buffer);
-    var allocator: Allocator(@TypeOf(gpa)) = .from(&gpa);
+    const allocator: Allocator(@TypeOf(gpa)) = .from(&gpa);
 
     const p = try allocator.create(u32);
     p.* = 42;
