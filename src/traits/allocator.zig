@@ -4,7 +4,6 @@ const Alignment = std.mem.Alignment;
 const math = std.math;
 const assert = std.debug.assert;
 const mem = std.mem;
-const Dispatch = @import("root.zig").Dispatch;
 
 /// A trait for allocators that provides a standard interface for memory allocation.
 ///
@@ -51,23 +50,23 @@ pub const AllocatorTrait = struct {
 ///
 /// It is equivalent to the standard library allocator, the only difference being that it is a static allocator.
 pub fn Allocator(comptime A: type) type {
-    const dispath = if (comptime A == std.mem.Allocator) Dispatch.dynamic else Dispatch.static;
-    if (dispath == .static)
+    const dispath_dyn = comptime A == std.mem.Allocator;
+    if (comptime !dispath_dyn)
         vftrait.assertSatisfyTrait(AllocatorTrait, A);
     return struct {
         const Self = @This();
-        pub const Impl = if (dispath == .static) A else std.mem.Allocator;
+        pub const Impl = if (dispath_dyn) A else *A;
         pub const Error = std.mem.Allocator.Error;
         // Wrapper around the allocator implementation.
 
-        impl: *Impl,
+        impl: Impl,
 
-        pub fn from(impl: *Impl) Self {
+        pub fn from(impl: Impl) Self {
             return .{ .impl = impl };
         }
 
         inline fn rawAlloc(self: Self, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
-            if (comptime dispath == .static) {
+            if (comptime !dispath_dyn) {
                 return @call(
                     .always_inline,
                     A.alloc,
@@ -84,7 +83,7 @@ pub fn Allocator(comptime A: type) type {
         }
 
         inline fn rawResize(self: Self, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) bool {
-            if (comptime dispath == .static) {
+            if (comptime !dispath_dyn) {
                 return @call(
                     .always_inline,
                     A.resize,
@@ -102,7 +101,7 @@ pub fn Allocator(comptime A: type) type {
         }
 
         inline fn rawRemap(self: Self, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
-            if (comptime dispath == .static) {
+            if (comptime !dispath_dyn) {
                 return @call(
                     .always_inline,
                     A.remap,
@@ -120,7 +119,7 @@ pub fn Allocator(comptime A: type) type {
         }
 
         inline fn rawFree(self: Self, memory: []u8, alignment: Alignment, ret_addr: usize) void {
-            if (comptime dispath == .static) {
+            if (comptime !dispath_dyn) {
                 @call(
                     .always_inline,
                     A.free,
@@ -428,7 +427,7 @@ pub fn Allocator(comptime A: type) type {
         }
 
         /// Copies `m` to newly allocated memory. Caller owns the memory.
-        pub fn dupe(allocator: *Self, comptime T: type, m: []const T) Error![]T {
+        pub fn dupe(allocator: Self, comptime T: type, m: []const T) Error![]T {
             const new_buf = try allocator.alloc(T, m.len);
             @memcpy(new_buf, m);
             return new_buf;
@@ -442,7 +441,7 @@ pub fn Allocator(comptime A: type) type {
 
         /// Copies `m` to newly allocated memory, with a null-terminated element. Caller owns the memory.
         pub fn dupeSentinel(
-            allocator: *Self,
+            allocator: Self,
             comptime T: type,
             m: []const T,
             comptime sentinel: T,
