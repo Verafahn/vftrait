@@ -50,8 +50,10 @@ pub const AllocatorTrait = struct {
 /// A wrapper around an allocator implementation that provides a standard interface for memory allocation.
 ///
 /// It is equivalent to the standard library allocator, the only difference being that it is a static allocator.
-pub fn Allocator(comptime A: type, comptime dispath: Dispatch) type {
-    vftrait.assertSatisfyTrait(AllocatorTrait, A);
+pub fn Allocator(comptime A: type) type {
+    const dispath = if (comptime A == std.mem.Allocator) Dispatch.dynamic else Dispatch.static;
+    if (dispath == .static)
+        vftrait.assertSatisfyTrait(AllocatorTrait, A);
     return struct {
         const Self = @This();
         pub const Impl = if (dispath == .static) A else std.mem.Allocator;
@@ -458,7 +460,7 @@ test "Allocator" {
     try std.testing.expect(comptime vftrait.satisfyTrait(AllocatorTrait, std.heap.FixedBufferAllocator));
 
     var buffer: [10]u8 = undefined;
-    var allocator: Allocator(std.heap.FixedBufferAllocator, .static) = .from(.init(&buffer));
+    var allocator: Allocator(std.heap.FixedBufferAllocator) = .from(.init(&buffer));
 
     const p = try allocator.create(u32);
     p.* = 42;
