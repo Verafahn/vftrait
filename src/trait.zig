@@ -11,6 +11,11 @@ const TypePair = struct {
     b: type,
 };
 
+const FunctionKind = enum {
+    function,
+    method,
+};
+
 const Report = struct {
     ok: bool = true,
     text: []const u8 = "",
@@ -215,7 +220,7 @@ fn checkFunction(
     if (isMethod(Trait, trait_fn))
         return checkMethod(Trait, Type, name, trait_fn, target_fn);
 
-    return checkSignature(Trait, Type, name, trait_fn, target_fn, "function", 0);
+    return checkSignature(Trait, Type, name, trait_fn, target_fn, .function, 0);
 }
 
 fn checkMethod(
@@ -247,7 +252,7 @@ fn checkMethod(
         );
     }
 
-    return out.merge(checkSignature(Trait, Type, name, trait_fn, target_fn, "method", 1));
+    return out.merge(checkSignature(Trait, Type, name, trait_fn, target_fn, .method, 1));
 }
 
 fn checkSignature(
@@ -256,7 +261,7 @@ fn checkSignature(
     comptime name: [:0]const u8,
     comptime trait_fn: std.lang.Type.Fn,
     comptime target_fn: std.lang.Type.Fn,
-    comptime kind: []const u8,
+    comptime kind: FunctionKind,
     comptime start: usize,
 ) Report {
     var out = Report{};
@@ -264,38 +269,40 @@ fn checkSignature(
     if (!std.meta.eql(trait_fn.attrs.@"callconv", target_fn.attrs.@"callconv")) {
         out = out.fail(
             "  - {s} '{s}': calling convention differs\n",
-            .{ kind, name },
+            .{ @tagName(kind), name },
         );
     }
     if (trait_fn.attrs.varargs != target_fn.attrs.varargs) {
-        out = out.fail("  - {s} '{s}': variadic-ness differs\n", .{ kind, name });
+        out = out.fail("  - {s} '{s}': variadic-ness differs\n", .{ @tagName(kind), name });
     }
 
-    const target_params: []const ?type = if (target_fn.param_types.len >= start)
-        target_fn.param_types[start..]
-    else
-        &.{};
-
-    out = out.merge(checkParams(
-        Trait,
-        Type,
-        name,
-        kind,
-        trait_fn.param_types[start..],
-        target_params,
-        start,
-    ));
+    if (trait_fn.param_types.len != target_fn.param_types.len) {
+        out = out.fail(
+            "  - {s} '{s}': expected {d} parameter(s), found {d}\n",
+            .{ @tagName(kind), name, trait_fn.param_types.len, target_fn.param_types.len },
+        );
+    } else {
+        out = out.merge(checkParamTypes(
+            Trait,
+            Type,
+            name,
+            kind,
+            trait_fn.param_types[start..],
+            target_fn.param_types[start..],
+            start,
+        ));
+    }
 
     if ((trait_fn.return_type == null) != (target_fn.return_type == null)) {
         out = out.fail(
             "  - {s} '{s}': return type is generic in Trait but not in Type (or vice versa)\n",
-            .{ kind, name },
+            .{ @tagName(kind), name },
         );
     } else if (trait_fn.return_type) |trait_return| {
         if (!isomorphic(Trait, Type, trait_return, target_fn.return_type.?, &.{}, true)) {
             out = out.fail(
                 "  - {s} '{s}': return type expected '{s}', found '{s}'\n",
-                .{ kind, name, expectedTypeName(Trait, Type, trait_return, null), @typeName(target_fn.return_type.?) },
+                .{ @tagName(kind), name, expectedTypeName(Trait, Type, trait_return, null), @typeName(target_fn.return_type.?) },
             );
         }
     }
@@ -303,30 +310,23 @@ fn checkSignature(
     return out;
 }
 
-fn checkParams(
+fn checkParamTypes(
     comptime Trait: type,
     comptime Type: type,
     comptime name: [:0]const u8,
-    comptime kind: []const u8,
+    comptime kind: FunctionKind,
     comptime trait_params: []const ?type,
     comptime target_params: []const ?type,
     comptime offset: usize,
 ) Report {
     var out = Report{};
 
-    if (trait_params.len != target_params.len) {
-        return out.fail(
-            "  - {s} '{s}': expected {d} parameter(s), found {d}\n",
-            .{ kind, name, trait_params.len, target_params.len },
-        );
-    }
-
     inline for (trait_params, target_params, 0..) |trait_param, target_param, i| {
         const position = offset + i + 1;
         if ((trait_param == null) != (target_param == null)) {
             out = out.fail(
                 "  - {s} '{s}': parameter {d} is generic in Trait but not in Type (or vice versa)\n",
-                .{ kind, name, position },
+                .{ @tagName(kind), name, position },
             );
             continue;
         }
@@ -334,7 +334,7 @@ fn checkParams(
             if (!isomorphic(Trait, Type, trait_type, target_param.?, &.{}, true)) {
                 out = out.fail(
                     "  - {s} '{s}': parameter {d} expected '{s}', found '{s}'\n",
-                    .{ kind, name, position, expectedTypeName(Trait, Type, trait_type, null), @typeName(target_param.?) },
+                    .{ @tagName(kind), name, position, expectedTypeName(Trait, Type, trait_type, null), @typeName(target_param.?) },
                 );
             }
         }
@@ -597,13 +597,43 @@ fn isomorphicPointer(
     if (a.attrs.@"allowzero" != b.attrs.@"allowzero") return false;
     if (a.attrs.@"addrspace" != b.attrs.@"addrspace") return false;
 
-    const a_align = a.attrs.@"align" orelse @alignOf(a.child);
-    const b_align = b.attrs.@"align" orelse @alignOf(b.child);
-    if (a_align != b_align) return false;
+    const a_align = pointerAlignment(a);
+    const b_align = pointerAlignment(b);
+    if ((a_align == null) != (b_align == null)) return false;
+    if (a_align) |alignment| {
+        if (alignment != b_align.?) return false;
+    }
 
     if ((a.sentinel_ptr == null) != (b.sentinel_ptr == null)) return false;
 
     return isomorphic(Trait, Type, a.child, b.child, seen, true);
+}
+
+/// Returns the pointee alignment of a pointer type, or null when the pointee
+/// is an uninstantiable type (for example `opaque`) for which Zig has no
+/// alignment value.
+fn pointerAlignment(comptime p: std.lang.Type.Pointer) ?usize {
+    if (p.attrs.@"align") |alignment| return alignment;
+    return naturalAlignment(p.child);
+}
+
+fn naturalAlignment(comptime T: type) ?usize {
+    return switch (@typeInfo(T)) {
+        .type,
+        .noreturn,
+        .comptime_float,
+        .comptime_int,
+        .undefined,
+        .null,
+        .@"fn",
+        .@"opaque",
+        .frame,
+        .@"anyframe",
+        .enum_literal,
+        .spirv,
+        => null,
+        else => @alignOf(T),
+    };
 }
 
 fn isomorphicArray(
@@ -1436,4 +1466,38 @@ test "satisfy: report keeps an associated type's own value" {
     try std.testing.expect(!comptime satisfy(Trait, Type, &diagnostic));
     try std.testing.expect(std.mem.indexOf(u8, diagnostic, "expected type 'u32'") != null);
     try std.testing.expect(std.mem.indexOf(u8, diagnostic, "expected type 'u64'") == null);
+}
+
+test "satisfy: pointers to opaque types" {
+    const Trait = struct {
+        pub const Handle = opaque {};
+        pub fn get() *Handle {
+            unreachable;
+        }
+    };
+    const Type = struct {
+        pub const Handle = opaque {};
+        pub fn get() *Handle {
+            unreachable;
+        }
+    };
+
+    try std.testing.expect(comptime satisfy(Trait, Type, null));
+}
+
+test "satisfy: function pointer types" {
+    const Trait = struct {
+        pub const Callback = *const fn (u32) void;
+        pub fn callback() Callback {
+            unreachable;
+        }
+    };
+    const Type = struct {
+        pub const Callback = *const fn (u32) void;
+        pub fn callback() Callback {
+            unreachable;
+        }
+    };
+
+    try std.testing.expect(comptime satisfy(Trait, Type, null));
 }

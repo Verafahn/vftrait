@@ -15,20 +15,3 @@ test trait {
     std.testing.refAllDecls(trait);
 }
 
-comptime {
-    const Trait = struct {
-        pub const Error = error{};
-        pub const T = type;
-        pub fn foo() Error!T {
-            unreachable;
-        }
-    };
-    const A = struct {
-        pub const Error = error{A};
-        pub const T = i32;
-        pub fn foo() Error!u64 {
-            unreachable;
-        }
-    };
-    requires(Trait, A);
-}
