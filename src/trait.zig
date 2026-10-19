@@ -139,7 +139,7 @@ fn checkConstant(comptime Trait: type, comptime Type: type, comptime name: [:0]c
     if (!isomorphic(Trait, Type, trait_type, target_type, &.{}, true)) {
         return failure(
             "  - associated constant '{s}': expected type '{s}', found '{s}'\n",
-            .{ name, @typeName(trait_type), @typeName(target_type) },
+            .{ name, expectedTypeName(Trait, Type, trait_type, null), @typeName(target_type) },
         );
     }
     return .{};
@@ -190,7 +190,7 @@ fn checkAssociatedType(
     if (!isomorphic(Trait, Type, trait_type, target_value, &.{}, false)) {
         return failure(
             "  - associated type '{s}': expected type '{s}', found '{s}'\n",
-            .{ name, @typeName(trait_type), @typeName(target_value) },
+            .{ name, expectedTypeName(Trait, Type, trait_type, name), @typeName(target_value) },
         );
     }
     return .{};
@@ -237,13 +237,13 @@ fn checkMethod(
         if (!selfCompatible(Trait, Type, trait_self, target_self)) {
             out = out.fail(
                 "  - method '{s}': self parameter expected '{s}', found '{s}'\n",
-                .{ name, @typeName(trait_self), @typeName(target_self) },
+                .{ name, expectedTypeName(Trait, Type, trait_self, null), @typeName(target_self) },
             );
         }
     } else {
         out = out.fail(
             "  - method '{s}': Type's self parameter is generic, expected '{s}'\n",
-            .{ name, @typeName(trait_self) },
+            .{ name, expectedTypeName(Trait, Type, trait_self, null) },
         );
     }
 
@@ -295,7 +295,7 @@ fn checkSignature(
         if (!isomorphic(Trait, Type, trait_return, target_fn.return_type.?, &.{}, true)) {
             out = out.fail(
                 "  - {s} '{s}': return type expected '{s}', found '{s}'\n",
-                .{ kind, name, @typeName(trait_return), @typeName(target_fn.return_type.?) },
+                .{ kind, name, expectedTypeName(Trait, Type, trait_return, null), @typeName(target_fn.return_type.?) },
             );
         }
     }
@@ -334,7 +334,7 @@ fn checkParams(
             if (!isomorphic(Trait, Type, trait_type, target_param.?, &.{}, true)) {
                 out = out.fail(
                     "  - {s} '{s}': parameter {d} expected '{s}', found '{s}'\n",
-                    .{ kind, name, position, @typeName(trait_type), @typeName(target_param.?) },
+                    .{ kind, name, position, expectedTypeName(Trait, Type, trait_type, null), @typeName(target_param.?) },
                 );
             }
         }
@@ -723,6 +723,99 @@ fn isomorphicAnyframe(
     return true;
 }
 
+/// Renders the type that `Type` is expected to have for a Trait-side type
+/// `T`. References to `Trait` and its declarations are replaced with the
+/// corresponding declarations of `Type`.
+///
+/// `own_name` is non-null only while rendering the value of an associated type
+/// declaration. The declaration's own value is not substituted with `Type`'s
+/// declaration; only references nested inside it are.
+fn expectedTypeName(
+    comptime Trait: type,
+    comptime Type: type,
+    comptime T: type,
+    comptime own_name: ?[]const u8,
+) []const u8 {
+    if (own_name) |name| {
+        if (@hasDecl(Trait, name)) {
+            const named_decl = traitDeclOf(Trait, T);
+            const refers_to_another = if (named_decl) |decl_name|
+                !std.mem.eql(u8, decl_name, name)
+            else
+                false;
+
+            if (!refers_to_another) {
+                const own_value = @field(Trait, name);
+                if (@TypeOf(own_value) == type and own_value == T) {
+                    return renderType(Trait, Type, T);
+                }
+            }
+        }
+    }
+
+    return renderResolvedType(Trait, Type, T);
+}
+
+fn renderResolvedType(comptime Trait: type, comptime Type: type, comptime T: type) []const u8 {
+    const resolved = resolve(Trait, Type, T);
+    if (resolved != T) return @typeName(resolved);
+    return renderType(Trait, Type, T);
+}
+
+fn renderType(comptime Trait: type, comptime Type: type, comptime T: type) []const u8 {
+    return switch (@typeInfo(T)) {
+        .pointer => |p| print("{s}{s}", .{ pointerPrefix(p), renderResolvedType(Trait, Type, p.child) }),
+        .array => |a| print("[{d}]{s}", .{ a.len, renderResolvedType(Trait, Type, a.child) }),
+        .optional => |o| print("?{s}", .{renderResolvedType(Trait, Type, o.child)}),
+        .error_union => |e| print("{s}!{s}", .{
+            renderResolvedType(Trait, Type, e.error_set),
+            renderResolvedType(Trait, Type, e.payload),
+        }),
+        .vector => |v| print("@Vector({d}, {s})", .{ v.len, renderResolvedType(Trait, Type, v.child) }),
+        .@"anyframe" => |a| if (a.child) |child|
+            print("anyframe->{s}", .{renderResolvedType(Trait, Type, child)})
+        else
+            "anyframe",
+        .@"fn" => |f| renderFnType(Trait, Type, f),
+        else => @typeName(T),
+    };
+}
+
+fn renderFnType(comptime Trait: type, comptime Type: type, comptime f: std.lang.Type.Fn) []const u8 {
+    var out: []const u8 = "fn (";
+    inline for (f.param_types, 0..) |param, i| {
+        if (i != 0) out = print("{s}, ", .{out});
+        if (param) |param_type| {
+            out = print("{s}{s}", .{ out, renderResolvedType(Trait, Type, param_type) });
+        } else {
+            out = print("{s}anytype", .{out});
+        }
+    }
+    out = print("{s}) ", .{out});
+    if (f.return_type) |return_type| {
+        out = print("{s}{s}", .{ out, renderResolvedType(Trait, Type, return_type) });
+    } else {
+        out = print("{s}anytype", .{out});
+    }
+    return out;
+}
+
+fn pointerPrefix(comptime p: std.lang.Type.Pointer) []const u8 {
+    var out: []const u8 = switch (p.size) {
+        .one => "*",
+        .many => "[*]",
+        .slice => "[]",
+        .c => "[*c]",
+    };
+
+    if (p.attrs.@"allowzero") out = print("{s}allowzero ", .{out});
+    if (p.attrs.@"align") |alignment| out = print("{s}align({d}) ", .{ out, alignment });
+    if (p.attrs.@"volatile") out = print("{s}volatile ", .{out});
+    if (p.attrs.@"const") out = print("{s}const ", .{out});
+
+    return out;
+}
+
 // ===================================== TESTS =====================================
 
 test "satisfy: empty trait accepts any type" {
@@ -879,7 +972,7 @@ test "satisfy: nested associated types" {
     try std.testing.expect(!comptime satisfy(Trait, Bad, null));
 }
 
-test "satisfy: associated enum and error set types" {
+test "satisfy: associated enum types and unrelated error sets" {
     const Trait = struct {
         pub const Color = enum { red, green };
         pub const Failure = error{OutOfMemory};
@@ -897,11 +990,12 @@ test "satisfy: associated enum and error set types" {
     };
     try std.testing.expect(!comptime satisfy(Trait, BadColor, null));
 
-    const BadError = struct {
+    // Error sets are not required to be isomorphic.
+    const OtherError = struct {
         pub const Color = enum { red, green };
         pub const Failure = error{InvalidArgument};
     };
-    try std.testing.expect(!comptime satisfy(Trait, BadError, null));
+    try std.testing.expect(comptime satisfy(Trait, OtherError, null));
 }
 
 test "satisfy: associated functions" {
@@ -1265,4 +1359,81 @@ test "satisfy: non-struct types cannot provide declarations" {
     comptime var diagnostic: []const u8 = "";
     try std.testing.expect(!comptime satisfy(Trait, u32, &diagnostic));
     try std.testing.expect(std.mem.indexOf(u8, diagnostic, "foo") != null);
+}
+
+test "satisfy: report substitutes the implementation's self type" {
+    const Trait = struct {
+        pub const Self = @This();
+        pub fn value(self: *Self) void {
+            _ = self;
+        }
+    };
+    const Type = struct {
+        pub const Self = @This();
+        pub fn value(self: *const Self) void {
+            _ = self;
+        }
+    };
+
+    comptime var diagnostic: []const u8 = "";
+    try std.testing.expect(!comptime satisfy(Trait, Type, &diagnostic));
+
+    const expected = std.fmt.comptimePrint("expected '*{s}'", .{@typeName(Type)});
+    const wrong = std.fmt.comptimePrint("expected '*{s}'", .{@typeName(Trait)});
+    try std.testing.expect(std.mem.indexOf(u8, diagnostic, expected) != null);
+    try std.testing.expect(std.mem.indexOf(u8, diagnostic, wrong) == null);
+}
+
+test "satisfy: report substitutes container declarations" {
+    const Trait = struct {
+        pub const Node = struct {
+            pub const tag = 1;
+        };
+        pub const current: *const Node = undefined;
+    };
+    const Type = struct {
+        pub const Node = struct {
+            pub const tag = 2;
+        };
+        pub const current: *const u8 = undefined;
+    };
+
+    comptime var diagnostic: []const u8 = "";
+    try std.testing.expect(!comptime satisfy(Trait, Type, &diagnostic));
+
+    const expected = std.fmt.comptimePrint("expected type '*const {s}'", .{@typeName(Type.Node)});
+    const wrong = std.fmt.comptimePrint("expected type '*const {s}'", .{@typeName(Trait.Node)});
+    try std.testing.expect(std.mem.indexOf(u8, diagnostic, expected) != null);
+    try std.testing.expect(std.mem.indexOf(u8, diagnostic, wrong) == null);
+}
+
+test "satisfy: report maps an alias of another declaration" {
+    const Trait = struct {
+        pub const Color = enum { red, green };
+        pub const Alias = Color;
+    };
+    const Type = struct {
+        pub const Color = enum { red, green };
+        pub const Alias = u32;
+    };
+
+    comptime var diagnostic: []const u8 = "";
+    try std.testing.expect(!comptime satisfy(Trait, Type, &diagnostic));
+
+    const expected = std.fmt.comptimePrint("expected type '{s}'", .{@typeName(Type.Color)});
+    try std.testing.expect(std.mem.indexOf(u8, diagnostic, expected) != null);
+}
+
+test "satisfy: report keeps an associated type's own value" {
+    const Trait = struct {
+        pub const Item = u32;
+    };
+    const Type = struct {
+        pub const Item = u64;
+    };
+
+    comptime var diagnostic: []const u8 = "";
+    try std.testing.expect(!comptime satisfy(Trait, Type, &diagnostic));
+    try std.testing.expect(std.mem.indexOf(u8, diagnostic, "expected type 'u32'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, diagnostic, "expected type 'u64'") == null);
 }
