@@ -1,85 +1,38 @@
 # vftrait
 
-这是一个用于检查鸭子类型的库。它提供了一个`satisfyTrait`函数，用于检查两个类型是否满足“形如”关系。
+vftrait 提供了一种在编译期验证两个类型是否同构的方式，在许多其他语言中都有相似的概念，比如C++的`concept/requires`，Rust的`impl/trait`等，对于Zig而言，`anytype`配合编译错误信息就已经能够覆盖绝大多数场景。本项目的编写出于以下几个目的：
+- 使静态派发和动态派发可以共存
+- 令ZLS能够产生更加有效的代码提示
+- 一次性验证类型是否匹配（同构）并报告所有错误
 
-## 安装
+## 匹配规则
 
-运行下面这条命令以将它添加到你的项目中：
+以下称模板类型为`Trait`，被检查的类型为`Type`。
 
-```sh
-zig fetch --save git+https://github.com/Verafahn/vftrait#master
-```
+1.`Trait`必须为结构体类型(`struct`)
+2.`Trait`中所有的公开声明必须出现于`Type`中。
+3.`Trait`中声明如果发生了自引用（引用了`Trait`中的另一个声明），`Type`的该声明也是自引用，而非引用的`Trait`中的声明
+4.`Trait`中的声明分以下四种情况：
+    - **1.关联类型**
+    - **1.关联常量**
+    - **1.关联函数**
+    - **1.方法**
 
-然后你就可以在你的项目中使用
+### 1.关联常量
 
-```zig
-const vftrait = b.dependency("vftrait", .{}).module("vftrait");
-const vftrait_mod = vftrait.module("vftrait");
+二者必须拥有相同名称和相同的类型。如果`Trait`中的该声明是自引用的，`Type`中也应自引用。
 
-// 之后就像一个普通的依赖项使用
-```
+### 2.关联类型
 
-## “形如”关系
+二者必须拥有相同名称，同时二者同构（递归检查）。
 
-如果一个类型能够满足另一个鸭子类型约定，那么它们就被视为“形如”关系。举一个具体的例子：
-```zig
-pub const A = struct {
-    pub fn func() void {}
-};
+特例：如果`Trait`中的关联类型值为`type`，则退化为关联常量，即可以为任何类型，不再有同构约束
 
-pub const B = struct {
-    pub fn func() void {}
-};
+### 3.关联函数
 
-pub const C = struct {
-    pub fn func() void {}
-    pub fn foo() void {}
-};
+二者必须拥有相同名称，同时所有的参数、返回值的类型必须同构。
 
-pub const D = struct {
-    pub fn foo() void {}
-}
-```
-对于以上四个类型，`A`和`B`同构，也相当于互相“形如”；`C`形如`A`（或`B`），因为它的子集中包含与`A`（或`B`）同构的内容，`C`同时也形如`D`；`D`与`A`、`B`和`C`均不成“形如”或同构关系。
+### 4.关联方法
 
-这些概念的引入是为了让鸭子类型相关的报错由被视为使用错误转变为类型错误，以改善错误的清晰度。
+除了关联函数的规则之外，特例`*anyopaque`与`*Self`/`*const Self`同构，相当于类型擦除self参数
 
-```zig
-const std = @import("std");
-
-pub const A = struct {
-    pub fn func() void {
-        std.debug.print("Called {s}", .{"A: func"});
-    }
-};
-
-pub const B = struct {
-    pub fn foo() void {
-        std.debug.print("Called {s}", .{"B: foo"});
-    }
-};
-
-pub const C = struct {
-    pub fn func() void {
-        std.debug.print("Called {s}", .{"C: func"});
-    }
-};
-
-pub fn call(v: anytype) void {
-    @TypeOf(v).func();
-}
-
-pub fn main() !void {
-    call(B{});
-}
-```
-
-```
-a.zig:22:15: error: struct 'a.B' has no member named 'func'
-    @TypeOf(v).func();
-    ~~~~~~~~~~^~~~~
-a.zig:9:15: note: struct declared here
-pub const B = struct {
-              ^~~~~~
-referenced by:
-```
