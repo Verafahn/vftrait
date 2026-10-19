@@ -3,7 +3,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 /// This section provides some predefined traits.
-/// 
+///
 /// It is worth noting that the implementation of these traits may not necessarily be optimal.
 pub const traits = @import("traits/root.zig");
 

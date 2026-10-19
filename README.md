@@ -1,174 +1,85 @@
 # vftrait
 
-A library for duck type checking during compilation. It provides the `satisfyTrait` function to verify at compile time whether a type satisfies the contract defined by a trait. 
+这是一个用于检查鸭子类型的库。它提供了一个`satisfyTrait`函数，用于检查两个类型是否满足“形如”关系。
 
-Similar concepts in other languages:
-| **Language** | **Concept** | **Keyword** |
-|---|---|---|
-| Rust | Trait | `trait` / `impl` |
-| C++ | Concept | `concept` / `requires` |
-| Haskell | Typeclass | `class` / `instance` |
-| Swift | Protocol | `protocol` |
-| Go | Interface (structural) | `interface` |
-| Java | Interface (nominal) | `interface` / `implements` |
+## 安装
 
-
-## Installation
-
-Run the following command to add vftrait to your project:
+运行下面这条命令以将它添加到你的项目中：
 
 ```sh
 zig fetch --save git+https://github.com/Verafahn/vftrait#master
 ```
 
-Then add the module in your `build.zig`:
+然后你就可以在你的项目中使用
 
 ```zig
 const vftrait = b.dependency("vftrait", .{}).module("vftrait");
-exe.root_module.addImport("vftrait", vftrait);
+const vftrait_mod = vftrait.module("vftrait");
+
+// 之后就像一个普通的依赖项使用
 ```
 
-## Quick Start
+## “形如”关系
 
-Define a trait as a struct whose declarations describe the contract.  
-Then call `satisfyTrait` to check whether a type implements the trait.
-
+如果一个类型能够满足另一个鸭子类型约定，那么它们就被视为“形如”关系。举一个具体的例子：
 ```zig
-const vftrait = @import("vftrait");
-
-// 1. Define the trait
-const Printable = struct {
-    pub fn format(self: *const @This(), writer: anytype) !void {
-        _ = self;
-        _ = writer;
-    }
+pub const A = struct {
+    pub fn func() void {}
 };
 
-// 2. Implement the trait implicitly (no `impl` keyword required)
-const Point = struct {
-    x: f32,
-    y: f32,
-
-    pub fn format(self: *const @This(), writer: anytype) !void {
-        try writer.print("Point({{.x = {d}, .y = {d}}})", .{ self.x, self.y });
-    }
+pub const B = struct {
+    pub fn func() void {}
 };
 
-// 3. Check at compile time
-comptime {
-    if (!vftrait.satisfyTrait(Printable, Point)) {
-        @compileError("Point must implement Printable");
-    }
+pub const C = struct {
+    pub fn func() void {}
+    pub fn foo() void {}
+};
+
+pub const D = struct {
+    pub fn foo() void {}
 }
 ```
+对于以上四个类型，`A`和`B`同构，也相当于互相“形如”；`C`形如`A`（或`B`），因为它的子集中包含与`A`（或`B`）同构的内容，`C`同时也形如`D`；`D`与`A`、`B`和`C`均不成“形如”或同构关系。
 
-For example, a specific usage example:
+这些概念的引入是为了让鸭子类型相关的报错由被视为使用错误转变为类型错误，以改善错误的清晰度。
 
 ```zig
-const vftrait = @import("vftrait");
 const std = @import("std");
 
-pub const Drawable = struct {
-    pub fn draw(self: *const @This()) void {
-        _ = self;
+pub const A = struct {
+    pub fn func() void {
+        std.debug.print("Called {s}", .{"A: func"});
     }
 };
 
-pub const Circle = struct {
-    radius: f32,
-
-    pub fn draw(self: *const @This()) void {
-        std.debug.print("Circle(radius={})", .{self.radius});
+pub const B = struct {
+    pub fn foo() void {
+        std.debug.print("Called {s}", .{"B: foo"});
     }
 };
 
-pub const Point = struct {
-    x: f32,
-    y: f32,
-
-    pub fn draw(self: *const @This()) void {
-        std.debug.print("Point(x={}, y={})", .{ self.x, self.y });
+pub const C = struct {
+    pub fn func() void {
+        std.debug.print("Called {s}", .{"C: func"});
     }
 };
 
-pub fn draw(shape: anytype) void {
-    vftrait.assertSatisfyTrait(Drawable, @TypeOf(shape));
-    shape.draw();
-    return;
+pub fn call(v: anytype) void {
+    @TypeOf(v).func();
 }
 
-pub fn main(init: std.process.Init) !void {
-    _ = init;
-
-    const circle = Circle{ .radius = 5.0 };
-    draw(circle);
-    const point = Point{ .x = 1.0, .y = 2.0 };
-    draw(point);
-
-    // draw(10); // Error: @TypeOf(10) does not satisfy Drawable
+pub fn main() !void {
+    call(B{});
 }
 ```
 
-## Trait Contract Elements
-
-The trait struct can contain four kinds of declarations:
-
-| Category                | Zig Declaration                         | Example                                    |
-| ----------------------- | --------------------------------------- | ------------------------------------------ |
-| **Associated constant** | `pub const name: T = ...;`              | `pub const max_size: usize = 1024;`        |
-| **Associated type**     | `pub const Name = some_type;`           | `pub const Item = struct {};`              |
-| **Associated function** | `pub fn name(...) ... { }`              | `pub fn fromInt(n: i32) Self { }`          |
-| **Method**              | `pub fn name(self: *Self, ...) ... { }` | `pub fn clone(self: *const Self) Self { }` |
-
-## Matching Rules
-
-- **Constants**: Must have exactly the same type.
-- **Types**: Must be of the same kind (e.g., `struct` vs `struct`, `error` vs `error`).  
-  Nested types are **not** recursively checked – only the top‑level kind is compared.
-- **Functions and methods**: Must have the same calling convention and arity, and each parameter type and return type must be **isomorphic** (structurally equivalent) to the corresponding associated type in the trait.
-
-## Special Feature: `anytype` with `type`
-
-When an associated type in the trait is set to the built‑in `type`, that position accepts any type:
-
-```zig
-const vftrait = @import("vftrait");
-
-const Trait = struct {
-    pub const Value = type; // Accepts any type
-    pub fn get(self: *const @This()) Value {
-        _ = self;
-    }
-};
-
-const IntHolder = struct {
-    pub const Value = i32;
-    pub fn get(self: *const @This()) i32 {
-        _ = self;
-        return 42;
-    }
-};
-
-const StrHolder = struct {
-    pub const Value = []const u8;
-    pub fn get(self: *const @This()) []const u8 {
-        _ = self;
-        return "hi";
-    }
-};
-
-comptime {
-    @compileLog(vftrait.satisfyTrait(Trait, IntHolder)); // true
-    @compileLog(vftrait.satisfyTrait(Trait, StrHolder)); // true
-}
 ```
-
-This also works for `u32`, `struct`, `union`, `error`, `enum`, pointers, optionals, and any other type.
-
-## Requirements
-
-- Zig ≥ 0.16.0
-
-## License
-
-MIT
+a.zig:22:15: error: struct 'a.B' has no member named 'func'
+    @TypeOf(v).func();
+    ~~~~~~~~~~^~~~~
+a.zig:9:15: note: struct declared here
+pub const B = struct {
+              ^~~~~~
+referenced by:
+```
