@@ -1,174 +1,187 @@
 # vftrait
 
-A library for duck type checking during compilation. It provides the `satisfyTrait` function to verify at compile time whether a type satisfies the contract defined by a trait. 
+Compile-time structural trait checking for Zig.
 
-Similar concepts in other languages:
-| **Language** | **Concept** | **Keyword** |
-|---|---|---|
-| Rust | Trait | `trait` / `impl` |
-| C++ | Concept | `concept` / `requires` |
-| Haskell | Typeclass | `class` / `instance` |
-| Swift | Protocol | `protocol` |
-| Go | Interface (structural) | `interface` |
-| Java | Interface (nominal) | `interface` / `implements` |
+`vftrait` verifies at compile time whether a type matches a trait template. The
+idea is similar to C++ `concepts`/`requires` and Rust traits. Zig's `anytype`
+together with compiler errors already covers many use cases; this project
+focuses on:
 
+- letting static and dynamic dispatch coexist;
+- giving ZLS more useful completion and type information;
+- validating a type once and reporting every mismatch at the same time.
+
+Requires Zig 0.17.0 or later.
 
 ## Installation
 
-Run the following command to add vftrait to your project:
-
 ```sh
-zig fetch --save git+https://github.com/Verafahn/vftrait#master
+zig fetch --save git+https://github.com/Verafahn/vftrait
 ```
 
 Then add the module in your `build.zig`:
 
 ```zig
-const vftrait = b.dependency("vftrait", .{}).module("vftrait");
-exe.root_module.addImport("vftrait", vftrait);
+const vftrait = b.dependency("vftrait", .{
+    .target = target,
+    .optimize = optimize,
+});
+
+// `exe` is the executable or library that should use the module.
+exe.root_module.addImport("vftrait", vftrait.module("vftrait"));
 ```
 
-## Quick Start
-
-Define a trait as a struct whose declarations describe the contract.  
-Then call `satisfyTrait` to check whether a type implements the trait.
+## Usage
 
 ```zig
 const vftrait = @import("vftrait");
 
-// 1. Define the trait
-const Printable = struct {
-    pub fn format(self: *const @This(), writer: anytype) !void {
+const Iterator = struct {
+    pub const Item = type;
+
+    pub fn next(self: *@This()) ?Item {
         _ = self;
-        _ = writer;
+        unreachable;
     }
 };
 
-// 2. Implement the trait implicitly (no `impl` keyword required)
-const Point = struct {
-    x: f32,
-    y: f32,
+const Counter = struct {
+    pub const Item = u32;
+    remaining: u32 = 3,
 
-    pub fn format(self: *const @This(), writer: anytype) !void {
-        try writer.print("Point({{.x = {d}, .y = {d}}})", .{ self.x, self.y });
+    pub fn next(self: *@This()) ?u32 {
+        if (self.remaining == 0) return null;
+        self.remaining -= 1;
+        return self.remaining;
     }
 };
 
-// 3. Check at compile time
 comptime {
-    if (!vftrait.satisfyTrait(Printable, Point)) {
-        @compileError("Point must implement Printable");
-    }
+    vftrait.requires(Iterator, Counter);
 }
 ```
 
-For example, a specific usage example:
+`requires` emits a compile error containing the full diagnostic when `Counter`
+does not satisfy `Iterator`. Use `satisfy` when a boolean result is needed.
+
+## API
 
 ```zig
-const vftrait = @import("vftrait");
-const std = @import("std");
+pub fn satisfy(comptime Trait: type, comptime Type: type, comptime report: ?*[]const u8) bool {...}
+pub fn requires(comptime Trait: type, comptime Type: type) void {...}
+```
 
-pub const Drawable = struct {
-    pub fn draw(self: *const @This()) void {
-        _ = self;
-    }
-};
+`satisfy` returns whether `Type` satisfies `Trait`. When it returns `false` and
+`report` is non-null, every mismatch is written through `report`. Since the
+whole check is evaluated at compile time, `report` must point to a compile-time
+variable:
 
-pub const Circle = struct {
-    radius: f32,
-
-    pub fn draw(self: *const @This()) void {
-        std.debug.print("Circle(radius={})", .{self.radius});
-    }
-};
-
-pub const Point = struct {
-    x: f32,
-    y: f32,
-
-    pub fn draw(self: *const @This()) void {
-        std.debug.print("Point(x={}, y={})", .{ self.x, self.y });
-    }
-};
-
-pub fn draw(shape: anytype) void {
-    vftrait.assertSatisfyTrait(Drawable, @TypeOf(shape));
-    shape.draw();
-    return;
-}
-
-pub fn main(init: std.process.Init) !void {
-    _ = init;
-
-    const circle = Circle{ .radius = 5.0 };
-    draw(circle);
-    const point = Point{ .x = 1.0, .y = 2.0 };
-    draw(point);
-
-    // draw(10); // Error: @TypeOf(10) does not satisfy Drawable
+```zig
+comptime var diagnostic: []const u8 = "";
+const ok = comptime vftrait.satisfy(Iterator, Counter, &diagnostic);
+if (!ok) {
+    @compileError(diagnostic);
 }
 ```
 
-## Trait Contract Elements
+When `report` is `null`, the result is still compile-time known and can be used
+in an ordinary expression.
 
-The trait struct can contain four kinds of declarations:
+## Matching rules
 
-| Category                | Zig Declaration                         | Example                                    |
-| ----------------------- | --------------------------------------- | ------------------------------------------ |
-| **Associated constant** | `pub const name: T = ...;`              | `pub const max_size: usize = 1024;`        |
-| **Associated type**     | `pub const Name = some_type;`           | `pub const Item = struct {};`              |
-| **Associated function** | `pub fn name(...) ... { }`              | `pub fn fromInt(n: i32) Self { }`          |
-| **Method**              | `pub fn name(self: *Self, ...) ... { }` | `pub fn clone(self: *const Self) Self { }` |
+Let `Trait` be the template type and `Type` the type being checked.
 
-## Matching Rules
+1. `Trait` must be a `struct`.
+2. Every public declaration of `Trait` must have a corresponding public
+   declaration in `Type`.
+3. Self references in `Trait` are resolved against `Type`. If a `Trait`
+   declaration refers to `Trait` itself or to another declaration of `Trait`,
+   the matching declaration in `Type` must refer to `Type`'s own declaration,
+   not to `Trait`'s.
+4. Declarations are classified into four kinds:
 
-- **Constants**: Must have exactly the same type.
-- **Types**: Must be of the same kind (e.g., `struct` vs `struct`, `error` vs `error`).  
-  Nested types are **not** recursively checked – only the top‑level kind is compared.
-- **Functions and methods**: Must have the same calling convention and arity, and each parameter type and return type must be **isomorphic** (structurally equivalent) to the corresponding associated type in the trait.
+### Associated constants
 
-## Special Feature: `anytype` with `type`
-
-When an associated type in the trait is set to the built‑in `type`, that position accepts any type:
+Both declarations must have the same name and isomorphic types. The values are
+not compared. Types that refer to other declarations are resolved as described
+above.
 
 ```zig
-const vftrait = @import("vftrait");
-
 const Trait = struct {
-    pub const Value = type; // Accepts any type
-    pub fn get(self: *const @This()) Value {
-        _ = self;
-    }
+    pub const count: usize = undefined;
 };
-
-const IntHolder = struct {
-    pub const Value = i32;
-    pub fn get(self: *const @This()) i32 {
-        _ = self;
-        return 42;
-    }
-};
-
-const StrHolder = struct {
-    pub const Value = []const u8;
-    pub fn get(self: *const @This()) []const u8 {
-        _ = self;
-        return "hi";
-    }
-};
-
-comptime {
-    @compileLog(vftrait.satisfyTrait(Trait, IntHolder)); // true
-    @compileLog(vftrait.satisfyTrait(Trait, StrHolder)); // true
-}
 ```
 
-This also works for `u32`, `struct`, `union`, `error`, `enum`, pointers, optionals, and any other type.
+### Associated types
 
-## Requirements
+Both declarations must have the same name, and both values must be types.
 
-- Zig ≥ 0.16.0
+- If the value in `Trait` is `type`, any type is accepted:
+
+  ```zig
+  pub const Item = type;
+  ```
+
+- If the value in `Trait` is a `struct`, it is treated as a nested trait and
+  checked recursively with the same rules.
+- Other values are compared structurally. Error sets are intentionally exempt:
+  any error set is compatible with any other error set. Opaque types only need
+  to both be opaque.
+
+### Associated functions
+
+Both declarations must have the same name, and all parameter types and the
+return type must be isomorphic. Generic parameters (`anytype`, parameter types
+that depend on another parameter, and generic return types) must match as
+generic.
+
+### Methods
+
+Methods follow the same rules as associated functions, with the first
+parameter treated as `self`. `Self`, `*Self`, and `*const Self` in `Trait`
+correspond to `Type`'s own self forms.
+
+As a special case, `*anyopaque` is treated as a type-erased self parameter and
+is compatible with `*Self` and `*const Self`:
+
+```zig
+const Trait = struct {
+    pub fn deinit(self: *anyopaque) void {
+        _ = self;
+    }
+};
+
+const Impl = struct {
+    pub fn deinit(self: *@This()) void {
+        _ = self;
+    }
+};
+```
+
+Method detection is based on the type of the first parameter, not its name.
+
+## Diagnostics
+
+All mismatches are collected in a single report, and expected types are derived
+from `Type`'s own declarations, so self references are shown after substitution:
+
+```text
+Type 'app.Counter' does not satisfy Trait 'app.Iterator':
+  - associated type 'Item': expected type 'u32', found 'u64'
+  - method 'next': return type expected '?u32', found '?u64'
+```
+
+## Notes
+
+- Everything is checked at compile time; there is no runtime cost.
+- Private declarations of `Trait` are ignored.
+- `Type` may have additional declarations beyond those required by `Trait`.
+- A method's first parameter must be compatible with `Trait` itself (or be
+  `*anyopaque`). Other functions are treated as associated functions.
+- If a trait declares multiple `pub const X = type;` placeholders, occurrences
+  of `type` inside a single signature cannot be distinguished by reflection;
+  avoid relying on more than one such placeholder in the same signature.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).

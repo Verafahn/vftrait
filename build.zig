@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    const vftrait_test = b.addTest(.{ .root_module = vftrait});
+    const vftrait_test = b.addTest(.{ .root_module = vftrait });
     b.installArtifact(vftrait_test);
 
     const run = b.addRunArtifact(vftrait_test);
