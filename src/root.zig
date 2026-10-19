@@ -14,4 +14,3 @@ pub fn requires(comptime Trait: type, comptime Type: type) void {
 test trait {
     std.testing.refAllDecls(trait);
 }
-

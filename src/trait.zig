@@ -597,8 +597,8 @@ fn isomorphicPointer(
     if (a.attrs.@"allowzero" != b.attrs.@"allowzero") return false;
     if (a.attrs.@"addrspace" != b.attrs.@"addrspace") return false;
 
-    const a_align = pointerAlignment(a);
-    const b_align = pointerAlignment(b);
+    const a_align = a.attrs.@"align" orelse naturalAlignment(resolve(Trait, Type, a.child));
+    const b_align = b.attrs.@"align" orelse naturalAlignment(b.child);
     if ((a_align == null) != (b_align == null)) return false;
     if (a_align) |alignment| {
         if (alignment != b_align.?) return false;
@@ -607,14 +607,6 @@ fn isomorphicPointer(
     if ((a.sentinel_ptr == null) != (b.sentinel_ptr == null)) return false;
 
     return isomorphic(Trait, Type, a.child, b.child, seen, true);
-}
-
-/// Returns the pointee alignment of a pointer type, or null when the pointee
-/// is an uninstantiable type (for example `opaque`) for which Zig has no
-/// alignment value.
-fn pointerAlignment(comptime p: std.lang.Type.Pointer) ?usize {
-    if (p.attrs.@"align") |alignment| return alignment;
-    return naturalAlignment(p.child);
 }
 
 fn naturalAlignment(comptime T: type) ?usize {
@@ -1500,4 +1492,43 @@ test "satisfy: function pointer types" {
     };
 
     try std.testing.expect(comptime satisfy(Trait, Type, null));
+}
+
+test "satisfy: self pointer alignment follows the implementation" {
+    const Trait = struct {
+        pub const Item = type;
+        pub fn next(self: *@This()) ?Item {
+            _ = self;
+            unreachable;
+        }
+    };
+    const Counter = struct {
+        pub const Item = u32;
+        remaining: u32 = 0,
+
+        pub fn next(self: *@This()) ?u32 {
+            _ = self;
+            return null;
+        }
+    };
+
+    try std.testing.expect(comptime satisfy(Trait, Counter, null));
+}
+
+test "satisfy: method parameter counts include self" {
+    const Trait = struct {
+        pub fn run(self: *@This(), value: u32) void {
+            _ = self;
+            _ = value;
+        }
+    };
+    const Type = struct {
+        pub fn run(self: *@This()) void {
+            _ = self;
+        }
+    };
+
+    comptime var diagnostic: []const u8 = "";
+    try std.testing.expect(!comptime satisfy(Trait, Type, &diagnostic));
+    try std.testing.expect(std.mem.indexOf(u8, diagnostic, "method 'run': expected 2 parameter(s), found 1") != null);
 }
